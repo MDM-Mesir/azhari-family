@@ -106,6 +106,12 @@
   #capaian { position: fixed; inset: 0; z-index: 40; background: rgba(10,30,25,.55); display: flex; align-items: center; justify-content: center; padding: 24px; }
   #capaian .isi { background: #fff; border-radius: 18px; padding: 26px 20px; text-align: center; max-width: 340px; font-size: 17px; line-height: 1.6; }
   #capaian .isi .besar { font-size: 46px; }
+  #konfirmasi { position: fixed; inset: 0; z-index: 39; background: rgba(10,30,25,.55); display: flex; align-items: center; justify-content: center; padding: 24px; }
+  #konfirmasi .isi { background: #fff; border-radius: 18px; padding: 22px 18px; text-align: center; width: 100%; max-width: 340px; font-size: 16px; line-height: 1.5; }
+  #konfirmasi .besar { font-size: 40px; }
+  .tamat { background: var(--emas-muda); border-radius: 10px; padding: 8px 10px; margin-top: 6px; }
+  .tamat + .tamat { margin-top: 6px; }
+  .labelKhatam { font-size: 11px; background: var(--emas); color: #fff; padding: 1px 7px; border-radius: 10px; margin-left: 4px; }
   #konfeti { position: fixed; inset: 0; pointer-events: none; z-index: 41; }
 </style>
 </head>
@@ -269,6 +275,11 @@
 
 <div id="ucapan"></div>
 <div id="capaian" class="tersembunyi" onclick="tutupCapaian()"><div class="isi"><div class="besar">🎉</div><div id="capaianTeks"></div><button class="utama" style="margin-top:16px">Alhamdulillah</button></div></div>
+<div id="konfirmasi" class="tersembunyi"><div class="isi">
+  <div class="besar">🎓</div><div id="kfTeks" style="font-weight:700"></div>
+  <label id="kfLabel">Tanggal</label><input id="kfTgl" type="date">
+  <div class="dua" style="margin-top:14px"><button class="kecil" onclick="tutupKonfirmasi()">Batal</button><button class="utama" style="margin-top:0" id="kfYa">Ya</button></div>
+</div></div>
 <canvas id="konfeti" class="tersembunyi"></canvas>
 
 <script src="config.js"></script>
@@ -419,7 +430,7 @@
 
   function tampilMatan() {
     const d = HARI.matan;
-    if (!d.length) { el('mDaftar').innerHTML = '<p class="catatan">Belum ada matan. Tambahkan di menu <b>Pengaturan</b>.</p>'; return; }
+    if (!d.length) { el('mDaftar').innerHTML = '<p class="catatan">Belum ada matan yang sedang dihafal. Tambahkan di menu <b>Pengaturan</b>.</p>'; return; }
     el('mDaftar').innerHTML = d.map(function (m, i) {
       const p = m.progres, isi = m.isi || {};
       let h = '<div class="matan"><div class="nama">' + esc(m.nama) + '<span class="jenisM">' + m.jenis + '</span></div>' +
@@ -453,6 +464,12 @@
       const h = await panggil('simpan', kunci(), HARI.tanggal, bagian, isi, KODE);
       ucapan(h.ucapan);
       if (h.capaian && h.capaian.length) setTimeout(function () { capaian(h.capaian); }, 700);
+      if (h.tawarKhatam) { const tk = h.tawarKhatam; setTimeout(function () {
+        tutupCapaian();
+        konfirmasi('Setoran ' + tk.nama + ' sudah 100%. Tandai khatam?', 'Tanggal khatam', async function (t) {
+          try { const r = await panggil('khatamMatan', kunci(), tk.id, t, false, KODE); ucapan(r.ucapan); await muatHari(); } catch (e) { ucapan('⚠️ ' + e.message); }
+        });
+      }, 3500); }
       await muatHari();
     } catch (e) { if (!cekSesi(e)) { pesan('pesanHari', e.message); ucapan('⚠️ ' + e.message); } }
     tombol.disabled = false; tombol.textContent = teks;
@@ -521,7 +538,8 @@
       '<div><div class="catatan">Rata-rata per hari belajar</div><div class="angka">' + jamMenit(bl.rata) + '</div></div></div>' +
       jenis.map(function (j) { return '<label>' + esc(j) + ' · ' + jamMenit(bl.jenis[j]) + '</label><div class="bilah"><div style="width:' + Math.round(bl.jenis[j] * 100 / (bl.menit || 1)) + '%"></div></div>'; }).join('') + '</div>';
     h += '<div class="kartu"><h3>📜 Hafalan matan</h3>' + (r.matan.length ? r.matan.map(function (m) {
-      return '<label>' + esc(m.nama) + (m.aktif ? '' : ' (nonaktif)') + ' · ' + m.sudah + '/' + m.total + (m.jenis === 'Natsr' ? ' bab' : ' bait') + ' · ' + m.setor + '× setor</label>' +
+      return '<label>' + esc(m.nama) + (m.status === 'selesai' ? '<span class="labelKhatam">🎓 Khatam ' + tglPendek(m.tamat) + '</span>' : m.aktif ? '' : ' (nonaktif)') +
+        ' · ' + m.sudah + '/' + m.total + (m.jenis === 'Natsr' ? ' bab' : ' bait') + ' · ' + m.setor + '× setor</label>' +
         '<div class="bilah emas"><div style="width:' + m.persen + '%"></div></div>';
     }).join('') : '<p class="catatan">Belum ada matan.</p>') + '</div>';
     h += '<div class="kartu"><h3>🌙 Ibadah</h3>' + r.ibadah.map(function (x) {
@@ -554,13 +572,22 @@
   function tampilJadwalAtur() {
     el('jJenis').innerHTML = (ATUR.jenisBelajar || JENIS_BELAJAR).map(function (j) { return '<option>' + esc(j) + '</option>'; }).join('');
     el('aJadwal').innerHTML = (ATUR.untuk.kode !== SAYA.kode ? '<p class="catatan">Mengatur jadwal milik <b>' + esc(ATUR.untuk.nama) + '</b>.</p>' : '') +
-      (ATUR.jadwal.length ? ATUR.jadwal.map(function (j, i) {
+      (ATUR.jadwal.some(function (j) { return j.status !== 'selesai'; }) ? ATUR.jadwal.map(function (j, i) {
+        if (j.status === 'selesai') return '';
         const hari = j.hari.length === 7 ? 'Setiap hari' : j.hari.join(', ');
         return '<div class="baris-matan' + (j.aktif ? '' : ' mati') + '"><div><b>' + esc(j.mulai) + (j.selesai ? '–' + esc(j.selesai) : '') + '</b> ' + esc(j.jenis) +
           '<div>' + esc(j.kitab) + '</div><div class="catatan">' + esc(hari) + (j.aktif ? '' : ' · nonaktif') + '</div></div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' +
           '<button class="kecil" onclick="ubahJadwal(' + i + ')">Ubah</button>' +
-          '<button class="kecil" onclick="aktifJadwal(' + i + ',' + !j.aktif + ')">' + (j.aktif ? 'Nonaktifkan' : 'Aktifkan') + '</button></div></div>';
-      }).join('') : '<p class="catatan">Belum ada jadwal. Tambahkan di bawah, nanti jadwal muncul di <b>Hari ini</b> dan dikirim sebagai pengingat.</p>');
+          '<button class="kecil" onclick="aktifJadwal(' + i + ',' + !j.aktif + ')">' + (j.aktif ? 'Nonaktifkan' : 'Aktifkan') + '</button>' +
+          '<button class="kecil" onclick="selesaiJadwal(' + i + ')">🎓 Selesai</button></div></div>';
+      }).join('') : '<p class="catatan">Belum ada jadwal berjalan. Tambahkan di bawah, nanti jadwal muncul di <b>Hari ini</b> dan dikirim sebagai pengingat.</p>') +
+      (ATUR.jadwal.some(function (j) { return j.status === 'selesai'; }) ? '<div class="subjudul">🎓 Sudah tamat</div>' + ATUR.jadwal.map(function (j, i) {
+        if (j.status !== 'selesai') return '';
+        const st = j.statistik || {};
+        return '<div class="tamat baris-matan" style="border:0"><div><b>' + esc(j.kitab) + '</b> <span class="catatan">' + esc(j.jenis) + '</span><div class="catatan">' +
+          rentangTgl(st.mulai, j.tamat) + ' · ' + (st.kali || 0) + ' pertemuan · ' + jamMenit(st.menit || 0) + '</div></div>' +
+          '<button class="kecil" onclick="batalSelesaiJadwal(' + i + ')">Batalkan</button></div>';
+      }).join('') : '');
     formJadwal();
   }
   function formJadwal(j) {
@@ -657,16 +684,52 @@
     catch (e) { ucapan('⚠️ ' + e.message); t.disabled = false; }
   }
 
+  // ---------- Selesai / khatam ----------
+  let aksiKonfirmasi = null;
+  function konfirmasi(teks, label, aksi) {
+    el('kfTeks').textContent = teks; el('kfLabel').textContent = label; el('kfTgl').value = hariIni(); el('kfTgl').max = hariIni();
+    aksiKonfirmasi = aksi; el('konfirmasi').classList.remove('tersembunyi');
+  }
+  function tutupKonfirmasi() { el('konfirmasi').classList.add('tersembunyi'); aksiKonfirmasi = null; }
+  el('kfYa').onclick = async function () {
+    const t = el('kfTgl').value || hariIni();
+    if (t > hariIni()) { ucapan('⚠️ Tanggal belum tiba.'); return; }
+    const a = aksiKonfirmasi; tutupKonfirmasi(); if (a) await a(t);
+  };
+  async function aksiSelesai(fn, id, tgl, batal) {
+    try {
+      const r = await panggil(fn, kunci(), id, tgl, batal, KODE);
+      ATUR = r; tampilAtur();
+      if (r.capaian) capaian([r.ucapan]); else ucapan(r.ucapan);
+    } catch (e) { if (!cekSesi(e)) { pesan('pesanAtur', e.message); ucapan('⚠️ ' + e.message); } }
+  }
+  function selesaiJadwal(i) { const j = ATUR.jadwal[i]; konfirmasi(j.kitab + ' sudah tamat?', 'Tanggal tamat', function (t) { return aksiSelesai('selesaiJadwal', j.id, t, false); }); }
+  function batalSelesaiJadwal(i) { aksiSelesai('selesaiJadwal', ATUR.jadwal[i].id, '', true); }
+  function khatamMatan(i) { const m = ATUR.matan[i]; konfirmasi(m.nama + ' sudah khatam?', 'Tanggal khatam', function (t) { return aksiSelesai('khatamMatan', m.id, t, false); }); }
+  function batalKhatam(i) { aksiSelesai('khatamMatan', ATUR.matan[i].id, '', true); }
+  function rentangTgl(a, z) { return (a ? tglPendek(a) + ' – ' : '') + (z ? tglPendek(z) + ' ' + z.slice(0, 4) : ''); }
+
   function tampilAtur() {
     tampilJadwalAtur();
     el('tHafal').value = ATUR.untuk.targetHafalan || ''; el('tBelajar').value = ATUR.untuk.targetBelajar || '';
     el('aMatan').innerHTML = (ATUR.untuk.kode !== SAYA.kode ? '<p class="catatan">Mengatur matan milik <b>' + esc(ATUR.untuk.nama) + '</b>.</p>' : '') +
-      (ATUR.matan.length ? ATUR.matan.map(function (m, i) {
+      (ATUR.matan.some(function (m) { return m.status !== 'selesai'; }) ? ATUR.matan.map(function (m, i) {
+        if (m.status === 'selesai') return '';
+        const pr = m.progres || { sudah: 0, total: 0, persen: 0 };
         return '<div class="baris-matan' + (m.aktif ? '' : ' mati') + '"><div><b>' + esc(m.nama) + '</b><span class="jenisM">' + m.jenis + '</span><div class="catatan">' +
-          (m.jenis === 'Natsr' ? m.bab.length + ' bab' : m.total + ' bait') + (m.aktif ? '' : ' · nonaktif') + '</div></div><div style="display:flex;gap:6px">' +
+          pr.sudah + '/' + (m.jenis === 'Natsr' ? m.bab.length + ' bab' : m.total + ' bait') + ' (' + pr.persen + '%)' + (m.aktif ? '' : ' · nonaktif') + '</div></div>' +
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' +
           '<button class="kecil" onclick="ubahMatan(' + i + ')">Ubah</button>' +
-          '<button class="kecil" onclick="aktifMatan(' + i + ',' + !m.aktif + ')">' + (m.aktif ? 'Nonaktifkan' : 'Aktifkan') + '</button></div></div>';
-      }).join('') : '<p class="catatan">Belum ada matan.</p>');
+          '<button class="kecil" onclick="aktifMatan(' + i + ',' + !m.aktif + ')">' + (m.aktif ? 'Nonaktifkan' : 'Aktifkan') + '</button>' +
+          '<button class="kecil" onclick="khatamMatan(' + i + ')">🎓 Khatam</button></div></div>';
+      }).join('') : '<p class="catatan">Belum ada matan yang sedang dihafal.</p>') +
+      (ATUR.matan.some(function (m) { return m.status === 'selesai'; }) ? '<div class="subjudul">🎓 Matan khatam</div>' + ATUR.matan.map(function (m, i) {
+        if (m.status !== 'selesai') return '';
+        const st = m.statistik || {};
+        return '<div class="tamat baris-matan" style="border:0"><div><b>' + esc(m.nama) + '</b><span class="jenisM">' + m.jenis + '</span><div class="catatan">' +
+          'Khatam ' + rentangTgl(st.mulai, m.tamat) + ' · ' + (st.kali || 0) + '× setor</div></div>' +
+          '<button class="kecil" onclick="batalKhatam(' + i + ')">Batalkan</button></div>';
+      }).join('') : '');
     formMatan();
   }
   function aturFormMatan() { const n = el('fJenis').value === 'Natsr'; el('fNatsr').classList.toggle('tersembunyi', !n); el('fNazham').classList.toggle('tersembunyi', n); }
