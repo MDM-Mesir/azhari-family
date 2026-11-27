@@ -56,6 +56,17 @@
   .belajar-baris { display: grid; grid-template-columns: 1.1fr 1.6fr .8fr 30px; gap: 6px; align-items: center; margin-top: 6px; }
   .belajar-baris input, .belajar-baris select { padding: 8px 6px; font-size: 14px; }
   .hapus { background: none; border: 0; color: var(--merah); font-size: 18px; }
+  .jdw { display: grid; grid-template-columns: 26px 1fr 70px; gap: 6px; align-items: center; padding: 7px 0; border-bottom: 1px dashed var(--garis); }
+  .jdw input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--hijau); }
+  .jdw .jam { font-weight: 700; color: var(--hijau-tua); font-size: 13px; }
+  .jdw .ket { font-size: 14px; line-height: 1.3; }
+  .jdw input[type=number] { padding: 7px 6px; font-size: 14px; }
+  .jdw.selesai .ket { color: var(--abu); }
+  .subjudul { font-size: 12px; color: var(--abu); margin: 10px 0 2px; font-weight: 700; }
+  .pilihHari { display: flex; flex-wrap: wrap; gap: 4px; }
+  .pilihHari .chip { padding: 6px 10px; margin: 0; font-size: 13px; }
+  .notif-baris { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 0; border-top: 1px solid var(--garis); }
+  .notif-baris:first-of-type { border-top: 0; }
   .matan { border-top: 1px dashed var(--garis); padding-top: 10px; margin-top: 10px; }
   .matan:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
   .matan .nama { font-weight: 700; }
@@ -150,6 +161,7 @@
 
       <div class="kartu">
         <h3>📚 Belajar harian</h3>
+        <div id="bJadwal"></div>
         <div id="bDaftar"></div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
           <span id="bTotal" class="catatan"></span>
@@ -208,6 +220,29 @@
           <div><label>Belajar per hari (menit)</label><input id="tBelajar" type="number" min="0" max="1440"></div>
         </div>
         <button class="utama" onclick="simpanTarget(this)">Simpan target</button>
+      </div>
+      <div class="kartu">
+        <h3>📅 Jadwal belajar</h3>
+        <div id="aJadwal"></div>
+      </div>
+      <div class="kartu">
+        <h3 id="judulFormJadwal">＋ Tambah jadwal</h3>
+        <input id="jId" type="hidden">
+        <label>Hari</label>
+        <div class="pilihHari" id="jHari"></div>
+        <div class="cepat"><button class="kecil" onclick="semuaHari(true)">Setiap hari</button><button class="kecil" onclick="semuaHari(false)">Kosongkan</button></div>
+        <div class="dua">
+          <div><label>Jam mulai</label><input id="jMulai" type="time"></div>
+          <div><label>Jam selesai</label><input id="jSelesai" type="time"></div>
+        </div>
+        <label>Jenis</label><select id="jJenis"></select>
+        <label>Kitab / mata kuliah</label><input id="jKitab" maxlength="100" placeholder="Syarh Ibnu Aqil">
+        <button class="utama" onclick="simpanJadwal(this)">Simpan jadwal</button>
+        <button class="kecil tersembunyi" id="jBatal" style="margin-top:8px" onclick="formJadwal()">Batal mengubah</button>
+      </div>
+      <div class="kartu" id="kartuNotif">
+        <h3>🔔 Notifikasi</h3>
+        <div id="nIsi"></div>
       </div>
       <div class="kartu">
         <h3>📜 Daftar matan</h3>
@@ -336,7 +371,16 @@
     const tH = h.target.hafalan;
     el('hPekan').innerHTML = 'Ziyadah pekan ini: <b>' + h.pekanHafalan + '</b>' + (tH ? ' / ' + tH + ' halaman' +
       '<div class="bilah"><div style="width:' + Math.min(100, Math.round(h.pekanHafalan * 100 / tH)) + '%"></div></div>' : ' halaman');
-    BELAJAR = h.belajar.length ? h.belajar.map(function (x) { return Object.assign({}, x); }) : [{ jenis: 'Talaqqi', kitab: '', menit: '' }];
+    // Jadwal hari ini menjadi daftar centang; kegiatan lain tetap bisa ditambah
+    const idHari = {};
+    JADWAL = (h.jadwal || []).map(function (j) {
+      idHari[j.id] = true;
+      const ada = h.belajar.filter(function (b) { return b.idJadwal === j.id; })[0];
+      return { id: j.id, mulai: j.mulai, selesai: j.selesai, jenis: j.jenis, kitab: j.kitab, cek: !!ada, menit: ada ? ada.menit : (j.menit || '') };
+    });
+    BELAJAR = h.belajar.filter(function (b) { return !b.idJadwal || !idHari[b.idJadwal]; }).map(function (x) { return Object.assign({}, x); });
+    if (!BELAJAR.length && !JADWAL.length) BELAJAR = [{ jenis: 'Talaqqi', kitab: '', menit: '' }];
+    tampilJadwalHari();
     tampilBelajar();
     tampilMatan();
     el('iDaftar').innerHTML = h.ibadah.length ? h.ibadah.map(function (x, i) {
@@ -348,20 +392,28 @@
     if (c) c.textContent = (c.classList.contains('ya') ? '✓ ' : '') + c.textContent.replace(/^✓ /, '');
   });
 
-  let BELAJAR = [];
+  let BELAJAR = [], JADWAL = [];
+  function tampilJadwalHari() {
+    el('bJadwal').innerHTML = JADWAL.length ? '<div class="subjudul">Jadwal hari ini</div>' + JADWAL.map(function (j, i) {
+      return '<div class="jdw' + (j.cek ? ' selesai' : '') + '"><input type="checkbox"' + (j.cek ? ' checked' : '') + ' onchange="JADWAL[' + i + '].cek=this.checked;this.parentNode.classList.toggle(\'selesai\',this.checked);totalBelajar()">' +
+        '<div><div class="jam">' + esc(j.mulai) + (j.selesai ? '–' + esc(j.selesai) : '') + '</div><div class="ket">' + esc(j.jenis) + ' · ' + esc(j.kitab) + '</div></div>' +
+        '<input type="number" inputmode="numeric" min="0" max="1440" placeholder="mnt" value="' + esc(j.menit) + '" oninput="JADWAL[' + i + '].menit=this.value;totalBelajar()"></div>';
+    }).join('') + '<div class="subjudul">Kegiatan lain</div>' : '';
+  }
   function tampilBelajar() {
     el('bDaftar').innerHTML = BELAJAR.map(function (x, i) {
       return '<div class="belajar-baris"><select onchange="BELAJAR[' + i + '].jenis=this.value">' +
         JENIS_BELAJAR.map(function (j) { return '<option' + (j === x.jenis ? ' selected' : '') + '>' + esc(j) + '</option>'; }).join('') + '</select>' +
         '<input placeholder="Kitab / mata kuliah" value="' + esc(x.kitab) + '" oninput="BELAJAR[' + i + '].kitab=this.value">' +
         '<input type="number" inputmode="numeric" min="0" max="1440" placeholder="mnt" value="' + esc(x.menit) + '" oninput="BELAJAR[' + i + '].menit=this.value;totalBelajar()">' +
-        '<button class="hapus" aria-label="Hapus" onclick="BELAJAR.splice(' + i + ',1);if(!BELAJAR.length)tambahBelajar();else tampilBelajar()">✕</button></div>';
+        '<button class="hapus" aria-label="Hapus" onclick="BELAJAR.splice(' + i + ',1);if(!BELAJAR.length&&!JADWAL.length)tambahBelajar();else tampilBelajar()">✕</button></div>';
     }).join('');
     totalBelajar();
   }
   function tambahBelajar() { BELAJAR.push({ jenis: 'Talaqqi', kitab: '', menit: '' }); tampilBelajar(); }
   function totalBelajar() {
-    const m = BELAJAR.reduce(function (s, x) { return s + (Number(x.menit) || 0); }, 0), t = HARI ? HARI.target.belajar : 0;
+    const m = BELAJAR.reduce(function (s, x) { return s + (Number(x.menit) || 0); }, 0) +
+              JADWAL.reduce(function (s, x) { return s + (x.cek ? Number(x.menit) || 0 : 0); }, 0), t = HARI ? HARI.target.belajar : 0;
     el('bTotal').innerHTML = 'Total ' + jamMenit(m) + (t ? ' / target ' + jamMenit(t) : '');
   }
 
@@ -390,7 +442,9 @@
   async function simpan(bagian, tombol, i) {
     let isi;
     if (bagian === 'hafalan') isi = { awal: el('hAwal').value, akhir: el('hAkhir').value, murojaah: el('hMur').value };
-    else if (bagian === 'belajar') isi = { daftar: BELAJAR };
+    else if (bagian === 'belajar') isi = { daftar: JADWAL.filter(function (j) { return j.cek; }).map(function (j) {
+      return { jenis: j.jenis, kitab: j.kitab, menit: j.menit, idJadwal: j.id };
+    }).concat(BELAJAR) };
     else if (bagian === 'ibadah') { isi = { selesai: {} }; HARI.ibadah.forEach(function (x, j) { if (el('ib' + j).classList.contains('ya')) isi.selesai[x.nama] = true; }); }
     else { const m = HARI.matan[i]; isi = m.jenis === 'Nazham' ? { id: m.id, awal: el('mA' + i).value, akhir: el('mZ' + i).value } : { id: m.id, bab: el('mB' + i).value, selesai: el('mS' + i).checked }; }
     if (bagian === 'hafalan' && isi.awal && isi.akhir && Number(isi.akhir) < Number(isi.awal)) { pesan('pesanHari', 'Halaman akhir harus ≥ halaman awal.'); return; }
@@ -494,9 +548,116 @@
   let ATUR = null;
   async function muatAtur() {
     pesan('pesanAtur', '');
-    try { ATUR = await panggil('pengaturan', kunci(), KODE); tampilAtur(); } catch (e) { if (!cekSesi(e)) pesan('pesanAtur', e.message); }
+    try { ATUR = await panggil('pengaturan', kunci(), KODE); tampilAtur(); muatNotif(); } catch (e) { if (!cekSesi(e)) pesan('pesanAtur', e.message); }
   }
+  const URUT_HARI = ['Sabtu', 'Ahad', 'Senin', 'Selasa', 'Rabu', 'Kamis', "Jum'at"];
+  function tampilJadwalAtur() {
+    el('jJenis').innerHTML = (ATUR.jenisBelajar || JENIS_BELAJAR).map(function (j) { return '<option>' + esc(j) + '</option>'; }).join('');
+    el('aJadwal').innerHTML = (ATUR.untuk.kode !== SAYA.kode ? '<p class="catatan">Mengatur jadwal milik <b>' + esc(ATUR.untuk.nama) + '</b>.</p>' : '') +
+      (ATUR.jadwal.length ? ATUR.jadwal.map(function (j, i) {
+        const hari = j.hari.length === 7 ? 'Setiap hari' : j.hari.join(', ');
+        return '<div class="baris-matan' + (j.aktif ? '' : ' mati') + '"><div><b>' + esc(j.mulai) + (j.selesai ? '–' + esc(j.selesai) : '') + '</b> ' + esc(j.jenis) +
+          '<div>' + esc(j.kitab) + '</div><div class="catatan">' + esc(hari) + (j.aktif ? '' : ' · nonaktif') + '</div></div><div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">' +
+          '<button class="kecil" onclick="ubahJadwal(' + i + ')">Ubah</button>' +
+          '<button class="kecil" onclick="aktifJadwal(' + i + ',' + !j.aktif + ')">' + (j.aktif ? 'Nonaktifkan' : 'Aktifkan') + '</button></div></div>';
+      }).join('') : '<p class="catatan">Belum ada jadwal. Tambahkan di bawah, nanti jadwal muncul di <b>Hari ini</b> dan dikirim sebagai pengingat.</p>');
+    formJadwal();
+  }
+  function formJadwal(j) {
+    el('jId').value = j ? j.id : ''; el('jMulai').value = j ? j.mulai : ''; el('jSelesai').value = j ? j.selesai : '';
+    el('jJenis').value = j ? j.jenis : 'Talaqqi'; el('jKitab').value = j ? j.kitab : '';
+    el('jHari').innerHTML = URUT_HARI.map(function (d) {
+      return '<span class="chip' + (j && j.hari.indexOf(d) >= 0 ? ' ya' : '') + '" data-hari="' + esc(d) + '" onclick="this.classList.toggle(\'ya\')">' + esc(d) + '</span>';
+    }).join('');
+    el('judulFormJadwal').textContent = j ? '✏️ Ubah jadwal' : '＋ Tambah jadwal';
+    el('jBatal').classList.toggle('tersembunyi', !j);
+  }
+  function semuaHari(ya) { document.querySelectorAll('#jHari .chip').forEach(function (c) { c.classList.toggle('ya', ya); }); }
+  function ubahJadwal(i) { formJadwal(ATUR.jadwal[i]); el('jKitab').scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+  async function aktifJadwal(i, aktif) {
+    try { ATUR = await panggil('aktifJadwal', kunci(), ATUR.jadwal[i].id, aktif, KODE); tampilAtur(); ucapan(aktif ? 'Jadwal diaktifkan' : 'Jadwal dinonaktifkan'); }
+    catch (e) { if (!cekSesi(e)) pesan('pesanAtur', e.message); }
+  }
+  async function simpanJadwal(t) {
+    const j = { id: el('jId').value, mulai: el('jMulai').value, selesai: el('jSelesai').value, jenis: el('jJenis').value, kitab: el('jKitab').value.trim(),
+                hari: Array.prototype.map.call(document.querySelectorAll('#jHari .chip.ya'), function (c) { return c.getAttribute('data-hari'); }) };
+    if (!j.hari.length) { pesan('pesanAtur', 'Pilih minimal satu hari.'); ucapan('⚠️ Pilih minimal satu hari.'); return; }
+    if (!j.mulai) { pesan('pesanAtur', 'Isi jam mulai.'); ucapan('⚠️ Isi jam mulai.'); return; }
+    if (!j.kitab) { pesan('pesanAtur', 'Isi kitab / mata kuliah.'); ucapan('⚠️ Isi kitab / mata kuliah.'); return; }
+    t.disabled = true; pesan('pesanAtur', '');
+    try { ATUR = await panggil('simpanJadwal', kunci(), j, KODE); tampilAtur(); ucapan('Jadwal tersimpan ✓'); } catch (e) { if (!cekSesi(e)) { pesan('pesanAtur', e.message); ucapan('⚠️ ' + e.message); } }
+    t.disabled = false;
+  }
+
+  // ---------- Notifikasi (Telegram + notifikasi aplikasi) ----------
+  const TOKEN_HP = 'af_fcm_token';
+  async function muatNotif() {
+    const kartu = el('kartuNotif');
+    if (KODE !== SAYA.kode) { el('nIsi').innerHTML = '<p class="catatan">Notifikasi diatur oleh masing-masing anggota dari HP-nya sendiri.</p>'; return; }
+    el('nIsi').innerHTML = '<p class="catatan">Memuat…</p>';
+    try { tampilNotif(await panggil('statusNotif', kunci())); } catch (e) { el('nIsi').innerHTML = '<p class="pesan gagal">' + esc(e.message) + '</p>'; }
+  }
+  function tampilNotif(st) {
+    let tokenSini = ''; try { tokenSini = localStorage.getItem(TOKEN_HP) || ''; } catch (e) {}
+    const hpAktif = tokenSini && st.apk.indexOf(tokenSini) >= 0;
+    let h = '<p class="catatan">🌅 ' + st.jam.pagi.replace(':', '.') + ' ringkasan jadwal · ⏰ ' + st.jam.sebelum + ' menit sebelum jadwal · 🌙 ' + st.jam.malam.replace(':', '.') + ' pengingat jika catatan belum diisi.</p>';
+    h += '<div class="notif-baris"><div><b>Telegram</b><div class="catatan">' + (st.telegram.length ? '✓ Terhubung: ' + esc(st.telegram.join(', ')) : (st.botSiap ? 'Belum terhubung' : 'Bot belum disiapkan admin')) + '</div></div>' +
+      (st.telegram.length ? '<button class="kecil" onclick="putusTg(this)">Putuskan</button>' : (st.botSiap ? '<button class="kecil" onclick="hubungTg(this)">Hubungkan</button>' : '')) + '</div>';
+    const dukung = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window && window.AF_FIREBASE;
+    h += '<div class="notif-baris"><div><b>Notifikasi aplikasi di HP ini</b><div class="catatan">' +
+      (!dukung ? 'Browser ini belum mendukung. Pakai Chrome, atau gunakan Telegram.' : !st.fcmSiap ? 'Belum disiapkan admin' : hpAktif ? '✓ Aktif di HP ini' : 'Belum aktif') +
+      (st.apk.length ? ' · ' + st.apk.length + ' perangkat terdaftar' : '') + '</div></div>' +
+      (dukung && st.fcmSiap ? (hpAktif ? '<button class="kecil" onclick="matikanHp(this)">Matikan</button>' : '<button class="kecil" onclick="aktifkanHp(this)">Aktifkan</button>') : '') + '</div>';
+    if (st.telegram.length || st.apk.length) h += '<button class="utama" onclick="tesNotif(this)">Kirim notifikasi tes</button>';
+    h += '<div id="nPesan" class="pesan"></div>';
+    el('nIsi').innerHTML = h;
+  }
+  async function hubungTg(t) {
+    const w = window.open('', '_blank'); t.disabled = true;
+    try {
+      const r = await panggil('hubungkanTelegram', kunci());
+      if (w) w.location.href = r.link; else location.href = r.link;
+      el('nPesan').innerHTML = 'Di Telegram, ketuk <b>Mulai / Start</b>. Setelah itu kembali ke sini dan ketuk <button class="kecil" onclick="muatNotif()">Periksa lagi</button>';
+    } catch (e) { if (w) w.close(); el('nPesan').textContent = e.message; el('nPesan').className = 'pesan gagal'; }
+    t.disabled = false;
+  }
+  async function putusTg(t) { t.disabled = true; try { tampilNotif(await panggil('putusTelegram', kunci())); ucapan('Telegram diputuskan'); } catch (e) { ucapan('⚠️ ' + e.message); } t.disabled = false; }
+  async function tesNotif(t) { t.disabled = true; try { const r = await panggil('tesNotif', kunci()); ucapan('Notifikasi tes dikirim ke ' + r.terkirim + ' tujuan ✓'); } catch (e) { ucapan('⚠️ ' + e.message); } t.disabled = false; }
+  function muatSkrip(src) { return new Promise(function (ok, gagal) { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = function () { gagal(new Error('Tidak bisa memuat ' + src)); }; document.head.appendChild(s); }); }
+  async function fcm() {
+    const v = 'https://www.gstatic.com/firebasejs/10.12.2/';
+    if (!window.firebase) { await muatSkrip(v + 'firebase-app-compat.js'); await muatSkrip(v + 'firebase-messaging-compat.js'); }
+    if (!firebase.apps.length) firebase.initializeApp(AF_FIREBASE.config);
+    return firebase.messaging();
+  }
+  function namaPerangkat() {
+    const u = navigator.userAgent;
+    return (/iPhone|iPad/.test(u) ? 'iPhone' : /Android/.test(u) ? 'Android' : 'Komputer') + ' · ' + (/Edg\//.test(u) ? 'Edge' : /SamsungBrowser/.test(u) ? 'Samsung' : /Chrome/.test(u) ? 'Chrome' : 'Browser');
+  }
+  async function aktifkanHp(t) {
+    t.disabled = true;
+    try {
+      const izin = await Notification.requestPermission();
+      if (izin !== 'granted') throw new Error('Notifikasi tidak diizinkan. Buka pengaturan situs di browser, lalu izinkan Notifikasi.');
+      const reg = await navigator.serviceWorker.register('sw.js');
+      await navigator.serviceWorker.ready;
+      const m = await fcm();
+      const token = await m.getToken({ vapidKey: AF_FIREBASE.vapidKey, serviceWorkerRegistration: reg });
+      if (!token) throw new Error('Gagal mendaftarkan HP ini. Coba lagi.');
+      try { localStorage.setItem(TOKEN_HP, token); } catch (e) {}
+      tampilNotif(await panggil('simpanTokenApk', kunci(), token, namaPerangkat()));
+      ucapan('Notifikasi aplikasi aktif di HP ini ✓');
+    } catch (e) { ucapan('⚠️ ' + e.message); t.disabled = false; }
+  }
+  async function matikanHp(t) {
+    t.disabled = true;
+    let tk = ''; try { tk = localStorage.getItem(TOKEN_HP) || ''; localStorage.removeItem(TOKEN_HP); } catch (e) {}
+    try { tampilNotif(await panggil('hapusTokenApk', kunci(), tk)); (await fcm()).deleteToken().catch(function () {}); ucapan('Notifikasi aplikasi dimatikan di HP ini'); }
+    catch (e) { ucapan('⚠️ ' + e.message); t.disabled = false; }
+  }
+
   function tampilAtur() {
+    tampilJadwalAtur();
     el('tHafal').value = ATUR.untuk.targetHafalan || ''; el('tBelajar').value = ATUR.untuk.targetBelajar || '';
     el('aMatan').innerHTML = (ATUR.untuk.kode !== SAYA.kode ? '<p class="catatan">Mengatur matan milik <b>' + esc(ATUR.untuk.nama) + '</b>.</p>' : '') +
       (ATUR.matan.length ? ATUR.matan.map(function (m, i) {
