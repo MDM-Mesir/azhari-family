@@ -600,7 +600,8 @@
   function tampilNotif(st) {
     let tokenSini = ''; try { tokenSini = localStorage.getItem(TOKEN_HP) || ''; } catch (e) {}
     const hpAktif = tokenSini && st.apk.indexOf(tokenSini) >= 0;
-    let h = '<p class="catatan">🌅 ' + st.jam.pagi.replace(':', '.') + ' ringkasan jadwal · ⏰ ' + st.jam.sebelum + ' menit sebelum jadwal · 🌙 ' + st.jam.malam.replace(':', '.') + ' pengingat jika catatan belum diisi.</p>';
+    let h = '<p class="catatan">🌅 ' + st.jam.pagi.replace(':', '.') + ' ringkasan jadwal · ⏰ ' + st.jam.sebelum + ' menit sebelum jadwal · 🌙 ' + st.jam.malam.replace(':', '.') + ' pengingat jika catatan belum diisi.' +
+      (st.admin && st.jam.ringkasan ? ' · 📊 ' + st.jam.ringkasan.replace(':', '.') + ' ringkasan isian seluruh keluarga (khusus admin).' : '') + '</p>';
     h += '<div class="notif-baris"><div><b>Telegram</b><div class="catatan">' + (st.telegram.length ? '✓ Terhubung: ' + esc(st.telegram.join(', ')) : (st.botSiap ? 'Belum terhubung' : 'Bot belum disiapkan admin')) + '</div></div>' +
       (st.telegram.length ? '<button class="kecil" onclick="putusTg(this)">Putuskan</button>' : (st.botSiap ? '<button class="kecil" onclick="hubungTg(this)">Hubungkan</button>' : '')) + '</div>';
     const dukung = 'Notification' in window && 'serviceWorker' in navigator && 'PushManager' in window && window.AF_FIREBASE;
